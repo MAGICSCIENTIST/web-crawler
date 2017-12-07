@@ -1,4 +1,4 @@
-var server = require("./server/server");
+var server = require("../src/web-crawler");
 server.start({
     catchType: "bioDeep",
     bioDeepopt: {
