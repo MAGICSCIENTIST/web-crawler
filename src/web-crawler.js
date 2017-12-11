@@ -20,7 +20,7 @@ var events = {
         return +(new Date()) + [];
     }
 }
-var defaultOptions = {    
+var defaultOptions = {
     catchType: "typeB",
     typeBopt: {
         rootUrl: 'http://www.papc.cn/html/folder/13113661-1.htm?type=1',
@@ -54,8 +54,8 @@ function _log(msg) {
 }
 
 //获取当前type的opt
-function _getCurOptGroup(opt) {
-    return opt[opt.catchType + "opt"];
+function _getCurOptGroup(which, opt) {
+    return opt[which + "opt"];
 }
 //url编码
 function _encodeUrl(_url) {
@@ -73,13 +73,14 @@ function _encodeUrl(_url) {
 
 //获取url下的内容
 //urls, loadedCallback, limit, rawUrl
-function _getPageByUrl(urls, loadedCallback, opt) {    
+function _getPageByUrl(urls, loadedCallback, opt) {
+    var self = this;
     var oper = new Promise(function (resolve) {
         var tempEvent = events.getTempEventName(),
             resList = [],
-            _monIndex=0;
+            _monIndex = 0;
         //当所有url都跑完了
-        console.log("搞事共"+urls.length);
+        console.log("搞事共" + urls.length);
         ep.after(tempEvent, urls.length, function () {
             console.log("所有url获取完成, 共" + urls.length);
             resolve(resList);
@@ -95,7 +96,7 @@ function _getPageByUrl(urls, loadedCallback, opt) {
                 .charset()
                 .end(function (err, res) {
                     _monIndex++;
-                    console.log("{index}/{count}".format({index:_monIndex,count:urls.length}))
+                    console.log("{index}/{count}".format({ index: _monIndex, count: urls.length }))
                     if (err) {
                         ep.emit(tempEvent, [_url])
                         if (err.code == "ETIMEDOUT") {
@@ -107,7 +108,7 @@ function _getPageByUrl(urls, loadedCallback, opt) {
                     console.log("页面获取成功 {url}".format({ url: _url }));
                     var $ = cheerio.load(res.text, { decodeEntities: false });
                     callback(null, _url);
-                    resList.push(loadedCallback(_url, $));                    
+                    resList.push(loadedCallback.call(self, _url, $));
                     ep.emit(tempEvent, [_url])
                 })
         })
@@ -125,14 +126,13 @@ function _generateUrlsDone() {
 
 //添加到url数组
 function _addSiteUrl(url) {
-    //如果参数是数组则遍历
-    var groupOpt= _getCurOptGroup(this.option);
+    //如果参数是数组则遍历    
     if (!url || !this.option) return;
-    if (!groupOpt.siteUrls) groupOpt.siteUrls = [];
+    if (!this.option.siteUrls) this.option.siteUrls = [];
     if (url instanceof Array) {
-        url.forEach(x => groupOpt.siteUrls.push(x))
+        url.forEach(x => this.option.siteUrls.push(x))
     } else {
-        groupOpt.siteUrls.push(url);
+        this.option.siteUrls.push(url);
     }
 }
 
@@ -170,48 +170,56 @@ function _complicated(urls) {
 
 ///封装↓
 function start(opt) {
-
+    // var self = this;
     var oper = new Promise(resolve => {
 
-        var option = _setOption.call(this, defaultOptions, opt);
+        var catchTypeOpt = _setOption.call(this, defaultOptions, opt);
         //组织url   
-        var catchTypeOpt = _getCurOptGroup(option)
-        var fun = catchTypeOpt.initUrlFunc;
-        if (!fun) {
+        // var catchTypeOpt = _getCurOptGroup(option)
+        var IniUrlfun = catchTypeOpt.initUrlFunc;
+        if (!IniUrlfun) {
             return console.log("没有组织url的方法");
         }
 
-        ep.all(events.loadUrlsDoneEvent, function () {
+        // ep.all(events.loadUrlsDoneEvent, function () {
+        //     var fun = catchTypeOpt.generateInfoFunc;
+        //     if (!fun) {
+        //         return console.log("没有生成数据的方法");
+        //     }
+        //     // CatchBioData(option, fun);
+        //     _getPageByUrl(catchTypeOpt.siteUrls, fun, catchTypeOpt).then(x => {
+        //         resolve(_complicated(x));
+        //     });
+        // })
+        IniUrlfun.call(this, this, catchTypeOpt).then(function () {
             var fun = catchTypeOpt.generateInfoFunc;
             if (!fun) {
                 return console.log("没有生成数据的方法");
             }
             // CatchBioData(option, fun);
-            _getPageByUrl(catchTypeOpt.siteUrls, fun, catchTypeOpt).then(x => {
-                resolve();
+            _getPageByUrl.call(this, catchTypeOpt.siteUrls, fun, catchTypeOpt).then(x => {
+                resolve(_complicated(x));
             });
-        })
-        fun(catchTypeOpt);
+        });
     })
 
     return oper;
 }
 
 module.exports = {
-    start: function(opt){
-        return start.call(this,opt);
-    },
+    // start: function (opt) {
+    //     return start.call(this, opt);
+    // },
     setOption: function (opt) {
         return _setOption.call(this, defaultOptions, opt);
     },
-    getCatchTypeOpt: function () {
-        return _getCurOptGroup.call(this, this.option);
+    getCatchTypeOpt: function (which) {
+        return _getCurOptGroup.call(this, which, this.option);
     },
-    addSiteUrl: function (urls) {
-        return _addSiteUrl.call(this, urls);
-    },
+    // addSiteUrl: function (urls) {
+    //     return _addSiteUrl.call(this, urls);
+    // },
     getPage: function (urls, callback, option) {
-        option = option || _getCurOptGroup(this.option);
         return _getPageByUrl.call(this, urls, callback, option);
     },
     fullUrl: function (root, _url) {
@@ -222,4 +230,47 @@ module.exports = {
     },
     urlsDone: _generateUrlsDone,
     complicated: _complicated,
+    saveToFile: function (datas, opt) {
+        return new Promise(resolve => {
+            if (datas instanceof Array) {
+                datas.forEach(x => {
+                    _save(x, opt);
+                })
+            } else {
+                _save(datas, opt);
+            }
+        })
+    },
+    createServer: function (which, opt) {
+        var option = _setOption.call(this, defaultOptions, opt);
+        var catchTypeOpt = _getCurOptGroup(which, option)
+        return {
+            option: catchTypeOpt,
+            start: function (opt) {
+                return start.call(this, opt);
+            },
+            setOption: function (opt) {
+                return new Promise(resolve => {
+                    _setOption.call(this, defaultOptions, opt);
+                })
+            },
+            getPage: function (urls, callback) {
+                return _getPageByUrl.call(this, urls, callback, this.option);
+            },
+            addSiteUrl: function (urls) {
+                return _addSiteUrl.call(this, urls);
+            },
+            saveToFile: function (datas) {
+                return new Promise(resolve => {
+                    if (datas instanceof Array) {
+                        datas.forEach(x => {
+                            _save(x, this.option);
+                        })
+                    } else {
+                        _save(datas, this.option);
+                    }
+                })
+            },
+        }
+    }
 };
