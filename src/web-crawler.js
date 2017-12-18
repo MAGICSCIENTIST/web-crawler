@@ -20,16 +20,19 @@ var events = {
         return +(new Date()) + [];
     }
 }
+var defaultCatchOpt = {
+    rootUrl: 'http://www.papc.cn/html/folder/13113661-1.htm?type=1',
+    generateInfoFunc: undefined,
+    initUrlFunc: undefined,
+    fileName: "result",
+    limit: 5,
+    siteUrls: [],
+    failedUrls: [],
+    areadyCatughtUrls: [],
+}
 var defaultOptions = {
     catchType: "typeB",
-    typeBopt: {
-        rootUrl: 'http://www.papc.cn/html/folder/13113661-1.htm?type=1',
-        generateInfoFunc: undefined,
-        initUrlFunc: undefined,
-        fileName: "result",
-        limit: 5,
-        siteUrls: [],
-    }
+    typeBopt: defaultCatchOpt
 }
 
 //save
@@ -97,11 +100,14 @@ function _getPageByUrl(urls, loadedCallback, opt) {
                 .end(function (err, res) {
                     _monIndex++;
                     console.log("{index}/{count}".format({ index: _monIndex, count: urls.length }))
-                    if (err) {
+                    if (err) {                       
                         ep.emit(tempEvent, [_url])
+                        var msg = "";
                         if (err.code == "ETIMEDOUT") {
-                            _log("ETIMEDOUT:" + _url);
+                            // _log("ETIMEDOUT:" + _url);
+                            msg = "ETIMEDOUT"
                         }
+                        _addBadUrl(_url,loadedCallback,msg);
                         return console.log(err)
                     }
 
@@ -134,6 +140,27 @@ function _addSiteUrl(url) {
     } else {
         this.option.siteUrls.push(url);
     }
+}
+
+//添加执行失败的url到url数组
+function _addBadUrl(url,where,why) {    
+    //如果参数是数组则遍历    
+    if (!url || !this.option) return;    
+    var urlstrs = url;
+    if (!this.option.failedUrls) this.option.failedUrls = [];
+    if (url instanceof Array) {
+        urlstrs = url.join(',')
+        url.forEach(x => this.option.failedUrls.push(x))        
+    } else {
+        this.option.failedUrls.push(url);
+    }
+
+    //记录一下
+    _log("failed url: {url} {where} {why}".format({
+        url: urlstrs,
+        where: where ? "\n on " + where : "",
+        why: why ? "\n because " + why : ""
+    }))
 }
 
 //set option
@@ -170,10 +197,10 @@ function _complicated(urls) {
 
 ///封装↓
 function start(opt) {
-    // var self = this;
+    var _this = this;
     var oper = new Promise(resolve => {
 
-        var catchTypeOpt = _setOption.call(this, defaultOptions, opt);
+        var catchTypeOpt = _setOption.call(_this, defaultOptions, opt);
         //组织url   
         // var catchTypeOpt = _getCurOptGroup(option)
         var IniUrlfun = catchTypeOpt.initUrlFunc;
@@ -181,23 +208,20 @@ function start(opt) {
             return console.log("没有组织url的方法");
         }
 
-        // ep.all(events.loadUrlsDoneEvent, function () {
-        //     var fun = catchTypeOpt.generateInfoFunc;
-        //     if (!fun) {
-        //         return console.log("没有生成数据的方法");
-        //     }
-        //     // CatchBioData(option, fun);
-        //     _getPageByUrl(catchTypeOpt.siteUrls, fun, catchTypeOpt).then(x => {
-        //         resolve(_complicated(x));
-        //     });
-        // })
-        IniUrlfun.call(this, this, catchTypeOpt).then(function () {
+        IniUrlfun.call(_this, _this, catchTypeOpt).then(function () {
             var fun = catchTypeOpt.generateInfoFunc;
             if (!fun) {
                 return console.log("没有生成数据的方法");
             }
             // CatchBioData(option, fun);
-            _getPageByUrl.call(this, catchTypeOpt.siteUrls, fun, catchTypeOpt).then(x => {
+            _getPageByUrl.call(_this, catchTypeOpt.siteUrls, function(_url, $) {
+                var _s = this;
+                try {
+                    return fun.call(_s, _url, $,_s);
+                } catch (err) {
+                    _s.addBadUrl(_url,"try generate info",err);
+                }
+            }, catchTypeOpt).then(x => {
                 resolve(_complicated(x));
             });
         });
@@ -210,7 +234,7 @@ module.exports = {
     // start: function (opt) {
     //     return start.call(this, opt);
     // },
-    setOption: function (opt) {
+    setOption: function (opt, isfirst) {
         return _setOption.call(this, defaultOptions, opt);
     },
     getCatchTypeOpt: function (which) {
@@ -259,6 +283,9 @@ module.exports = {
             },
             addSiteUrl: function (urls) {
                 return _addSiteUrl.call(this, urls);
+            },
+            addBadUrl: function (_url, where, why) {                
+                return _addBadUrl.call(this, urls,where,why);
             },
             saveToFile: function (datas) {
                 return new Promise(resolve => {
